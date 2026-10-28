@@ -22,7 +22,10 @@ The platform stack creates a dedicated VPC, two public subnets, an HTTPS
 Application Load Balancer, ECR, CloudWatch logs, and the Fargate execution role.
 Tasks use public IPs for outbound image pulls without a NAT gateway; their security
 group accepts port 3000 only from the load balancer. The application has no AWS
-task role. HTTPS and its HTTP redirect are intentionally internet-accessible.
+task role. HTTPS and its HTTP redirect accept only the public IPv4 address supplied
+as `AllowedClientCidr` (a single address with `/32`). The load balancer uses IPv4.
+Anyone sharing that public IP can connect; update the parameter when changing networks
+or when the ISP changes the address.
 
 Juice Shop uses local SQLite and resets its database at startup. Keep one task and
 no autoscaling. Releases stop the old task before starting its replacement, causing
@@ -41,6 +44,7 @@ activated. Activation and billing changes are owner-managed prerequisites.
 2. Validate all three templates with `cfn-lint` and CloudFormation Guard, then
    review a CloudFormation change set for `platform.yml`.
 3. Deploy `platform.yml` as `juice-shop-demo-platform`, supplying `CertificateArn`
+   and `AllowedClientCidr`
    and allowing IAM resource creation. Add a Squarespace CNAME with host
    `juice-shop` and value from the `LoadBalancerDns` stack output.
 4. Ensure the ECS service-linked role exists. Deploy `github.yml` as
@@ -60,8 +64,9 @@ for every release, avoiding direct ECS updates that drift from CloudFormation.
 
 ## Release and rollback
 
-Push or merge a change to `main` to run checks, build, deploy, and smoke-test the
-product API. The workflow summary records both the previous image and the new
+Push or merge a change to `main` to run checks, build, deploy, and verify ECS stability
+and load-balancer target health. The target health check calls the product API.
+GitHub runners do not receive application ingress access. The workflow summary records both the previous image and the new
 digest. Immutable ECR tags contain the commit SHA, run ID, and attempt number.
 
 To roll back, run **Deploy** manually from `main` and enter the
@@ -77,7 +82,8 @@ AWS_PROFILE=juice-shop-demo AWS_REGION=us-east-2 \
 
 ## Verification and operation
 
-- Public homepage, JavaScript bundle, challenges API, and product API must work.
+- From the allowed network, the homepage, JavaScript bundle, challenges API, and
+  product API must work. Connections from other public IPs must be blocked.
 - CloudFormation must report a completed deployment and ECS must have one healthy
   running task using the requested image digest.
 - Application logs are retained for seven days in the platform's CloudWatch log
