@@ -695,6 +695,13 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.post('/profile', utils.asyncHandler(updateUserProfile()))
 
   /* Route for vulnerable code snippets */
+  app.use('/snippets', (req: Request, res: Response, next: NextFunction) => {
+    if (config.get('challenges.codingChallengesEnabled') === 'never') {
+      res.sendStatus(404)
+    } else {
+      next()
+    }
+  })
   app.get('/snippets/:challenge', utils.asyncHandler(serveCodeSnippet()))
   app.post('/snippets/verdict', utils.asyncHandler(checkVulnLines()))
   app.get('/snippets/fixes/:key', utils.asyncHandler(serveCodeFixes()))

@@ -1,0 +1,32 @@
+server:
+  baseUrl: 'https://juice-shop.stuartmehrens.com'
+application:
+  name: 'Juice Shop'
+  showVersionNumber: false
+  showGitHubLinks: false
+  localBackupEnabled: false
+  social:
+    blueSkyUrl: ~
+    mastodonUrl: ~
+    twitterUrl: ~
+    facebookUrl: ~
+    slackUrl: ~
+    redditUrl: ~
+    pressKitUrl: ~
+    nftUrl: ~
+    questionnaireUrl: ~
+  welcomeBanner:
+    showOnFirstStart: false
+  cookieConsent:
+    message: 'We use cookies to remember your preferences and keep your shopping session active.'
+    dismissText: 'Got it'
+    linkText: 'Privacy policy'
+    linkUrl: '/#/privacy-security/privacy-policy'
+challenges:
+  showSolvedNotifications: false
+  showHints: false
+  showMitigations: false
+  codingChallengesEnabled: never
+  restrictToTutorialsFirst: false
+hackingInstructor:
+  isEnabled: false

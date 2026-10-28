@@ -1,268 +1,52 @@
-# AI Agent Guidelines for OWASP Juice Shop
-
-This document is the **primary authoritative source** of context for all AI assistants (Claude, GitHub Copilot, Codeium, Continue.dev, Junie, etc.) contributing to OWASP Juice Shop. It provides comprehensive guidelines to maintain code quality, security, and adherence to project standards.
-
-## Instruction Precedence & Guidance Layers
-
-When multiple instructions or guidance files exist, resolve conflicts in the following strict order of precedence:
-
-1. **User Directives**: Explicit instructions provided directly by the user in the active prompt/task.
-2. **Task-Specific Skills**: Dedicated instructions in `.ai/skills/<skill-name>/SKILL.md` (and their linked checklists/patterns).
-3. **Repository Guidelines (AGENTS.md)**: This root `AGENTS.md` file, serving as the primary baseline for all AI contributors.
-4. **Editor/Tool Pointer Files**: Files such as `.claude/CLAUDE.md`, `.github/copilot-instructions.md`, `.cursor/rules`, `.codeium/instructions.md`, `.continue/instructions.md`, and `.junie/AGENTS.md` (which delegate directly to this document).
-5. **Repository Facts & Conventions**: Schemas (`lib/config.schema.ts`), data models (`models/`), challenge registries (`data/static/challenges.yml`), configurations (`config/default.yml`), and existing test patterns.
-
-## Agent Operational Rules & Governance
-
-### 1. Reusing Repository Facts and Conventions
-- **Inspect Before Implementing**: Always check existing implementations (e.g., how adjacent routes, models, or tests are structured) before adding new code.
-- **Strict Pattern Alignment**: Mirror existing naming schemes, error handling, import ordering, and comment density. Never invent custom helper libraries or novel patterns when established repository conventions exist.
-- **Canonical Model & Key Registry**: Always check `models/challenge.ts` and `data/static/challenges.yml` for challenge identifiers, keys, and categories rather than inventing new terms.
-
-### 2. Handling Ambiguity and Missing Business Facts
-- **Ground Truth First**: Resolve ambiguities by checking canonical repository files (`data/static/challenges.yml`, `config/default.yml`, `lib/config.schema.ts`, `package.json`).
-- **Never Hallucinate or Assume**: If business logic, challenge attributes, or required metadata cannot be derived from existing repository facts or task inputs, stop and ask the user for clarification. Never invent placeholder flags, fictional challenge mechanics, or unverified security assertions.
-
-### 3. Canonical External Sources
-- **Security Mitigations**: Only link to official OWASP resources (the **OWASP Cheat Sheet Series** is strongly preferred) in challenge mitigation URLs.
-- **External Metadata Verification**: When crawling external references (for `REFERENCES.md`, `SOLUTIONS.md`, or release notes), extract only verified facts (author, title, date, version). Discard unverified claims or commercial spam.
-- **Translations**: Canonical translation workflow is hosted on [Crowdin](https://crowdin.com/project/owasp-juice-shop). Do not edit `i18n/*.json` files directly.
-
-### 4. Narrow Scope & Change Boundaries
-- **Surgical Changes**: Restrict modifications strictly to files relevant to the active task. Do not perform drive-by refactorings, reformat untouched files, or adjust unrelated configurations.
-- **Doc-Only Efficiency**: For edits confined to `REFERENCES.md` or `SOLUTIONS.md`, skip heavy test execution and linting commands (`npm run lint`, `npm test`) unless explicitly requested.
-
-### 5. Repository Rule and Checklist Application
-Before completing any non-trivial change, verify against the relevant repository checklist:
-- **New or modified challenges**: Follow `.ai/skills/verify-challenge/checklists/challenge-checklist.md`.
-- **Test additions and coverage**: Follow `.ai/skills/write-tests/checklists/testing-checklist.md`.
-- **Release note drafting**: Follow `.ai/skills/generate-release-notes/checklists/release-notes-checklist.md`.
-- **Snippet/codefix changes**: Execute and verify `npm run rsn` following `.ai/skills/verify-rsn-fix/SKILL.md`.
-
-## Project Overview
-
-- **Project**: OWASP Juice Shop - an intentionally insecure web application for security training
-- **Primary Languages**: TypeScript, JavaScript, Angular (frontend)
-- **Key Technologies**: Node.js (22–26 with 24 being the default), Express, SQLite/Sequelize, MongoDB/MarsDB, Angular 22.x
-- **Testing**: Node.js built-in test runner (server unit tests), Supertest (API integration), Vitest (frontend unit tests), Cypress (E2E tests)
-- **Code Style**: JS Standard Style (enforced via ESLint)
-- **Repository**: [juice-shop/juice-shop](https://github.com/juice-shop/juice-shop)
-
-## Key Files and Directories
-
-- `app.ts` / `server.ts` - Application entry points
-- `lib/` - Utility functions and libraries (including `lib/startup/` for initialization)
-- `routes/` - Express route handlers
-- `models/` - Sequelize data models (SQLite)
-- `data/` - Data creation and management (`data/static/` for challenges, users, codefixes)
-- `views/` - Server-rendered templates (Handlebars `.hbs` and Pug `.pug`)
-- `test/server/` - Server unit tests (Node.js built-in test runner)
-- `test/api/` - API integration tests (Node.js built-in test runner + Supertest)
-- `frontend/src/` - Angular frontend code (tests use Vitest)
-- `cypress/` - E2E tests (Cypress)
-- `rsn/` - Refactoring Safety Net scripts and cache
-- `config/` - Configuration files (YAML, multiple themed configs like `ctf.yml`, `default.yml`)
-- `i18n/` - Internationalization files (do NOT modify directly)
-- `ftp/` - Files served via the simulated FTP directory
-- `monitoring/` - Grafana dashboard config
-- `.github/workflows/` - CI/CD pipelines
-- `encryptionkeys/` - Encryption key files
-
-## Important Constraints
-
-1. **Security Context**: This project contains intentional vulnerabilities for training. New vulnerabilities must be approved by maintainers and well-documented.
-2. **Challenge Development**: Consult maintainers before creating new challenges. AI-generated challenges risk being duplicate, unsolvable, or dysfunctional.
-3. **Code Changes and RSN**: When modifying challenge-related code, the Refactoring Safety Net must pass.
-4. **Dependency Updates**: Verify compatibility with `package.json` and `frontend/package.json`.
-5. **Translation Modifications**: Use [Crowdin](https://crowdin.com/project/owasp-juice-shop), not direct file editing.
-6. **Insecure Infrastructure Code**: All files in the `./infrastructure` and `./infrastructure/terraform` directories are **intentionally insecure** and part of several hacking & coding challenges! **DO NOT** use them to deploy any actual infrastructure. To actually deploy OWASP Juice Shop, use the `Dockerfile` in the root of this repository.
-
-## Recommended Use Cases
-
-### ✅ Good Use Cases
-
-- **Code Analysis**: Understanding existing code structure and patterns
-- **Refactoring**: Improving code quality while maintaining functionality
-- **Test Writing**: Creating unit, integration, and e2e tests
-- **Bug Fixing**: Identifying and resolving issues
-- **Documentation**: Writing clear comments and documentation
-
-### ⚠️ Use with Caution
-
-- **Challenge Development**: Consult with maintainers before creating new challenges.
-- **Security Vulnerabilities**: Ensure AI-suggested vulnerabilities are intentional and appropriate for the project.
-- **Dependencies**: Verify any suggested package updates for compatibility.
-- **Architecture Changes**: Discuss major structural changes with maintainers first.
-
-## Essential Guidelines
-
-### 1. Clean Up AI-Generated Noise
-
-**Required** per CONTRIBUTING.md rule #6: Remove unnecessary AI-generated content before submitting PRs.
-
-**Remove**:
-- Verbose comments explaining obvious code
-- Generic placeholder comments
-- Overly detailed docstrings for simple functions
-- Repetitive explanations, `console.log` statements
-
-**Keep**:
-- Meaningful comments for complex logic
-- Challenge hints and metadata
-- Security-relevant documentation
-
-### 2. Code Style Compliance
-
-Always run ESLint before committing (unless only `REFERENCES.md` or `SOLUTIONS.md` were modified):
-```bash
-npm run lint
-```
-The AI should suggest code following [JS Standard Style](http://standardjs.com/), but always verify.
-
-### 3. Testing Requirements
-
-For any code changes (unless only `REFERENCES.md` or `SOLUTIONS.md` were modified):
-- **Unit/Integration Tests**: New features and changes should have tests. For how to write them, keep coverage high, and close coverage gaps, see the [write-tests skill](./.ai/skills/write-tests/SKILL.md).
-- **E2E Tests**: Required for new/modified challenges (authoring guidance in the [write-tests skill](./.ai/skills/write-tests/SKILL.md)).
-- **RSN (Refactoring Safety Net)**: Required when modifying existing code that is part of a coding challenge (see the [verify-rsn-fix skill](./.ai/skills/verify-rsn-fix/SKILL.md) for details).
-- **Run Tests Locally**:
-  ```bash
-  npm test                    # Runs frontend, server, and api tests
-  npm run test:frontend       # Frontend unit tests (Vitest)
-  npm run test:server         # Server unit tests only (Node.js built-in test runner)
-  npm run test:api            # API integration tests (Node.js built-in test runner + Supertest)
-  npm start & npm run test:e2e  # E2E tests (Cypress)
-  npm run rsn                 # Refactoring Safety Net
-  ```
-
-### 4. Commit Sign-off
-
-All commits must be signed off (DCO):
-```bash
-git commit -s -m "Your commit message"
-```
-
-### 5. Branch and PR Strategy
-
-- Work on `develop` branch-based feature branches.
-- Keep PRs focused on a single scope.
-- Reference related issues in PR descriptions.
-
-## Development Workflow
-
-### 1. Understanding the Codebase
-Ask the AI to:
-- Explain specific components or patterns.
-- Identify where to implement new features.
-- Trace code execution paths.
-
-### 2. Implementation
-Ask the AI to:
-- Generate initial implementation.
-- Suggest test cases.
-- Review for security implications.
-
-### 3. Quality Assurance
-Before committing:
-1. Remove AI-generated noise.
-2. Run `npm run lint` (unless only `REFERENCES.md` or `SOLUTIONS.md` were modified).
-3. Run relevant test suites.
-4. If you modified code that is part of a coding challenge, run `npm run rsn`.
-5. Manually verify functionality.
-6. Check for unintended changes.
-
-### 4. Documentation
-Ask the AI to:
-- Write clear commit messages.
-- Draft PR descriptions.
-- Document complex logic.
-
-## Anti-Patterns to Avoid
-
-❌ **Don't**: Accept AI suggestions blindly without understanding them.
-✅ **Do**: Review and understand all AI-generated code.
-
-❌ **Don't**: Submit PRs with verbose AI-generated comments.
-✅ **Do**: Clean up and keep only meaningful comments.
-
-❌ **Don't**: Skip testing because AI "seems confident".
-✅ **Do**: Always run the full test suite.
-
-❌ **Don't**: Use AI for contribution farming or trivial changes.
-✅ **Do**: Make meaningful contributions that add value.
-
-❌ **Don't**: Let AI modify translations directly.
-✅ **Do**: Use [Crowdin](https://crowdin.com/project/owasp-juice-shop) for translations.
-
-## Example: Implementing a Bug Fix
-
-1. **Analyze**: Ask the AI to analyze the issue.
-2. **Locate**: Locate the problematic code.
-3. **Implement**: Implement the fix with the AI's help.
-4. **Test**: Generate tests and run the suite.
-5. **RSN**: Run `npm run rsn` if the fix affects code used in a coding challenge.
-6. **Sign-off**: Clean up and commit with sign-off (`git commit -s`).
-
-## Quality Checklist
-
-Before submitting a PR:
-
-- [ ] Code follows JS Standard Style (ESLint passes)
-- [ ] AI-generated noise removed
-- [ ] Tests added/updated and passing
-- [ ] RSN check passing (if modified code relevant for a coding challenge)
-- [ ] Manual testing completed
-- [ ] Commits are signed off
-- [ ] PR based on `develop` branch
-- [ ] Single, focused scope
-- [ ] All CI checks passing
-
-## Refactoring Safety Net (RSN)
-
-When modifying existing code that is part of a coding challenge, you must run the RSN to ensure code snippet and fix option files remain consistent:
-
-```bash
-npm run rsn
-```
-
-- **If RSN fails**: Review the listed differences.
-- If changes are intentionally part of the coding challenge, update the differences cache: `npm run rsn:update`.
-- **IMPORTANT**: Utilize the [verify-rsn-fix skill](./.ai/skills/verify-rsn-fix/SKILL.md).
-- When refactoring source code that is part of a challenge snippet, manually apply the same changes to the corresponding codefix files in `data/static/codefixes/` to maintain consistency.
-
-## Getting Help
-
-- **Authoritative Guide**: [AGENTS.md](./AGENTS.md)
-- **Contribution Guidelines**: [CONTRIBUTING.md](./CONTRIBUTING.md)
-- **Project Documentation**: [pwning.owasp-juice.shop](https://pwning.owasp-juice.shop/)
-- **Community**: GitHub issues and discussions.
-
-## Skills
-
-- [add-reference skill](./.ai/skills/add-reference/SKILL.md): Instructions for adding new blog posts, talks, or other references to `REFERENCES.md`
-- [add-solution skill](./.ai/skills/add-solution/SKILL.md): Instructions for adding new hacking guides, videos, or tools to `SOLUTIONS.md`
-- [create-m3-theme skill](./.ai/skills/create-m3-theme/SKILL.md): Instructions for creating new Angular Material M3 themes
-- [generate-release-notes skill](./.ai/skills/generate-release-notes/SKILL.md): Instructions for generating release notes.
-- [generate-shop-customization skill](./.ai/skills/generate-shop-customization/SKILL.md): Instructions for generating a branded shop customization config in `config/` from public product-source URLs and business context.
-- [verify-challenge skill](./.ai/skills/verify-challenge/SKILL.md): Instructions for verifying new challenges fulfill all project requirements and metadata
-- [verify-rsn-fix skill](./.ai/skills/verify-rsn-fix/SKILL.md): Instructions for identifying and fixing broken RSN caused by code changes
-- [write-tests skill](./.ai/skills/write-tests/SKILL.md): Instructions for writing automated tests (frontend, server, API, Cypress E2E), keeping code coverage high, and closing coverage gaps found in `lcov.info` files
-
-## Verification of Agent Context
-
-To verify that an AI agent (like GitHub Copilot or Claude) is correctly using this context, you can use the following test prompts:
-
-1. **Check Primary Guidelines**: "What are the security constraints for developing new challenges in this project? Refer to the primary agent guidelines."
-   - *Expected Result*: The agent should summarize constraints from the "Important Constraints" section of this file.
-2. **Check Skill Discovery**: "How do I fix a break in the Refactoring Safety Net (RSN)? Is there a skill for this?"
-   - *Expected Result*: The agent should point to the `verify-rsn-fix` skill located in `./.ai/skills/verify-rsn-fix/SKILL.md`.
-3. **Check Skill Content**: "Show me the checklist for verifying a new challenge."
-   - *Expected Result*: The agent should find and display the content from `./.ai/skills/verify-challenge/checklists/challenge-checklist.md`.
-
-## Remember
-
-AI agents are productivity tools for enhancing development. You (or the person reviewing the PR) are responsible for the quality, correctness, and security of all contributions. Always review AI-generated code critically, test thoroughly, and follow the project's guidelines.
-
----
-
-**Last Updated**: April 2026
+# Repository guidance
+
+This repository contains the Juice Shop storefront: an Angular frontend, an
+Express API, and SQLite-backed application data. Deployment uses ECS Fargate
+and GitHub Actions.
+
+## Working conventions
+
+- Inspect adjacent code and follow existing TypeScript, Angular, and JS Standard
+  Style conventions. Keep changes focused and preserve work already in progress.
+- Use `config/default.yml` and `lib/config.schema.ts` for configuration facts, and
+  `models/challenge.ts` and `data/static/challenges.yml` for challenge identifiers.
+- Keep behavior changes scoped to the requested task. Files under `ftp/`,
+  `.well-known/`, `encryptionkeys/`, and `infrastructure/` may be required at
+  runtime; check their consumers before changing or removing them.
+- Do not edit `i18n/*.json` translations directly.
+- Preserve license and copyright notices. Avoid redundant comments and generated
+  documentation that does not help maintain the application.
+
+## Build and verification
+
+Use Node.js 24. `npm ci` installs locked backend and frontend dependencies. Run `npm run build`
+to build the application.
+Run `NODE_ENV=storefront npm start` for the storefront configuration, or
+`NODE_ENV=storefront npm run serve:dev` during development.
+
+- Run `npm run lint` before committing.
+- Run `npm test` for application code changes, and `npm run build` to verify builds.
+- Run Cypress (`npm run test:e2e` against a running app) for changed challenge flows.
+- Run `npm run rsn` when changing code used by coding challenges. Keep corresponding
+  `data/static/codefixes/` files consistent; do not refresh the RSN cache merely to
+  hide a failure.
+- Report failing or blocked checks accurately. Documentation-only changes need
+  link/reference checks rather than the full application test suite.
+
+## Deployment
+
+- Build the root `Dockerfile`. Real deployment templates and the release script
+  live in `deploy/aws/`; operational instructions are in `deploy/aws/README.md`.
+- Never provision the fixtures in `infrastructure/`; use `deploy/aws/`.
+- AWS CLI profile: `juice-shop-demo`; selected Region: `us-east-2`.
+- Domain: `juice-shop.stuartmehrens.com`; DNS is managed in Squarespace.
+- GitHub Actions uses the `demo` environment and AWS OIDC. Keep credentials out of
+  source control and logs. Deploy immutable ECR image digests.
+- Keep one ECS task: SQLite data is local and resets on startup. Releases can cause
+  a brief outage and reset application data.
+
+## Git workflow
+
+Use focused feature branches from `main` and review changes through pull
+requests. Sign off commits with `git commit -s`. The deployment workflow runs on
+`main`; preserve its verification and rollback steps.

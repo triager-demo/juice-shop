@@ -7,7 +7,6 @@ app/
 uploads/complaints/*.*
 !uploads/complaints/.gitkeep
 ftp/legal.md
-package-lock.json
 i18n/*.json
 i18n/*.invalid
 !frontend/src/assets/i18n/*.json
@@ -22,7 +21,6 @@ cache/
 coverage/
 dist/
 logs/
-vagrant/.vagrant/
 *.orig
 *.out
 *.log
@@ -57,6 +55,7 @@ config/*.yml
 !config/default.yml
 !config/juicebox.yml
 !config/quiet.yml
+!config/storefront.yml
 !config/test.yml
 !config/7ms.yml
 !config/mozilla.yml
