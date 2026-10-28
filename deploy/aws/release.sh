@@ -44,7 +44,7 @@ if [[ "$actual_image" != "$image_uri" ]]; then
 fi
 
 aws ecs wait services-stable --region "$aws_region" --cluster "$(output ClusterName)" --services "$service_stack"
-curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors \
-  https://juice-shop.stuartmehrens.com/rest/products/search |
-  jq -e '.status == "success" and (.data | length > 0)' >/dev/null
+aws elbv2 wait target-in-service --region "$aws_region" --target-group-arn "$(output TargetGroupArn)"
+aws elbv2 describe-target-health --region "$aws_region" --target-group-arn "$(output TargetGroupArn)" |
+  jq -e '.TargetHealthDescriptions | length > 0 and all(.[]; .TargetHealth.State == "healthy")' >/dev/null
 echo "Verified release: $image_uri"

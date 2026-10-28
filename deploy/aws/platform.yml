@@ -6,8 +6,13 @@ Metadata:
   com.aws.cloudformation.Context:
     must:
       - Deploy only the root Dockerfile, never the challenge infrastructure directory.
-      - Public HTTPS ingress is intentional for the internet demo; tasks accept traffic only from the load balancer.
+      - Ingress is restricted to the operator IP; tasks accept traffic only from the load balancer.
 Parameters:
+  AllowedClientCidr:
+    Type: String
+    Description: Public IPv4 address allowed to access the application, with /32 suffix.
+    AllowedPattern: '^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/32$'
+    ConstraintDescription: Supply a single IPv4 address followed by /32.
   CertificateArn:
     Type: String
     AllowedPattern: 'arn:aws:acm:us-east-2:[0-9]{12}:certificate/.+'
@@ -65,14 +70,14 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Metadata:
       com.aws.cloudformation.Context:
-        why: Public HTTPS is explicitly required by the demo; HTTP only redirects to HTTPS.
-        must: [Never allow direct public ingress to the application task.]
+        why: Only the operator network can access HTTPS or its HTTP redirect.
+        must: [Allow only AllowedClientCidr, never allow direct public ingress to the application task.]
     Properties:
-      GroupDescription: Public demo HTTP redirect and HTTPS
+      GroupDescription: Operator-only HTTP redirect and HTTPS
       VpcId: !Ref Vpc
       SecurityGroupIngress:
-        - {IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0}
-        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0}
+        - {IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: !Ref AllowedClientCidr}
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: !Ref AllowedClientCidr}
       SecurityGroupEgress:
         - {IpProtocol: tcp, FromPort: 3000, ToPort: 3000, CidrIp: 10.42.0.0/16}
   TaskSecurityGroup:
