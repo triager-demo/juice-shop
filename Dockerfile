@@ -1,9 +1,11 @@
 FROM node:24 AS installer
 COPY . /juice-shop
 WORKDIR /juice-shop
-RUN npm install -g typescript@^6.0.3
-RUN npm install --omit=dev
-RUN npm dedupe --omit=dev
+RUN npm install -g npm@11.19.1
+RUN npm ci
+RUN npm run build
+RUN npm run sbom
+RUN npm prune --omit=dev --ignore-scripts
 RUN rm -rf frontend/node_modules
 RUN rm -rf frontend/.angular
 RUN rm -rf frontend/src/assets
@@ -14,17 +16,12 @@ RUN chmod -R g=u ftp/ frontend/dist/ logs/ data/ i18n/
 RUN rm ftp/legal.md || true
 RUN rm i18n/*.json || true
 
-# keep version in sync with package.json
-ARG CYCLONEDX_NPM_VERSION='^2.0.0||^3.0.0||^4.0.0'
-RUN npm install -g @cyclonedx/cyclonedx-npm@$CYCLONEDX_NPM_VERSION
-RUN npm run sbom
-
 FROM gcr.io/distroless/nodejs24-debian13
 ARG BUILD_DATE
 ARG VCS_REF
 LABEL maintainer="Bjoern Kimminich <bjoern.kimminich@owasp.org>" \
     org.opencontainers.image.title="OWASP Juice Shop" \
-    org.opencontainers.image.description="Probably the most modern and sophisticated insecure web application" \
+    org.opencontainers.image.description="Juice Shop storefront with an Angular frontend and Express API" \
     org.opencontainers.image.authors="Bjoern Kimminich <bjoern.kimminich@owasp.org>" \
     org.opencontainers.image.vendor="Open Worldwide Application Security Project" \
     org.opencontainers.image.documentation="https://help.owasp-juice.shop" \

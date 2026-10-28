@@ -1,0 +1,81 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**/*.md', '.cursor/rules']
+  workflow_dispatch:
+    inputs:
+      image_digest:
+        description: Existing ECR sha256 digest to redeploy or roll back; blank builds this commit
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: demo-deployment-release
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-2
+  PLATFORM_STACK: juice-shop-demo-platform
+  SERVICE_STACK: juice-shop-demo-service
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Deploy to ECS
+    if: github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 40
+    environment:
+      name: demo
+      url: https://juice-shop.stuartmehrens.com
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Authenticate to AWS
+        uses: aws-actions/configure-aws-credentials@8e892652a41b1e9ca2f311aa8742dfd36271f739
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-${{ github.run_id }}
+      - name: Resolve image repository
+        run: |
+          repository_uri=$(aws cloudformation describe-stacks --stack-name "$PLATFORM_STACK" --query "Stacks[0].Outputs[?OutputKey=='RepositoryUri'].OutputValue | [0]" --output text)
+          echo "REPOSITORY_URI=$repository_uri" >> "$GITHUB_ENV"
+          echo "REPOSITORY_NAME=${repository_uri#*/}" >> "$GITHUB_ENV"
+      - name: Build and publish root Dockerfile
+        if: inputs.image_digest == ''
+        env:
+          IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          registry=${REPOSITORY_URI%%/*}
+          aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
+          docker build --platform linux/arm64 --build-arg "VCS_REF=$GITHUB_SHA" -t "$REPOSITORY_URI:$IMAGE_TAG" .
+          docker push "$REPOSITORY_URI:$IMAGE_TAG"
+          digest=$(aws ecr describe-images --repository-name "$REPOSITORY_NAME" --image-ids "imageTag=$IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text)
+          echo "IMAGE_DIGEST=$digest" >> "$GITHUB_ENV"
+      - name: Select existing release
+        if: inputs.image_digest != ''
+        env:
+          REQUESTED_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          [[ "$REQUESTED_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          aws ecr describe-images --repository-name "$REPOSITORY_NAME" --image-ids "imageDigest=$REQUESTED_DIGEST" >/dev/null
+          echo "IMAGE_DIGEST=$REQUESTED_DIGEST" >> "$GITHUB_ENV"
+      - name: Record previous image
+        run: |
+          previous=$(aws cloudformation describe-stacks --stack-name "$SERVICE_STACK" --query "Stacks[0].Outputs[?OutputKey=='ImageUri'].OutputValue | [0]" --output text 2>/dev/null || true)
+          echo "Previous image: ${previous:-initial deployment}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Deploy and verify
+        run: |
+          bash deploy/aws/release.sh "$REPOSITORY_URI@$IMAGE_DIGEST"
+          echo "Deployed image: $REPOSITORY_URI@$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"

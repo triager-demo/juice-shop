@@ -15,7 +15,6 @@ export default [
   {
     ignores: [
       'app/private/**',
-      'vagrant/**',
       'frontend/**',
       'data/static/codefixes/**',
       'dist/**',

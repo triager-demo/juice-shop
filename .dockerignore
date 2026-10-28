@@ -9,7 +9,6 @@
 .idea/
 .junie/
 .mailmap
-.npmrc
 .nyc_output
 .playwright-mcp/
 /bom.json
@@ -23,11 +22,7 @@ frontend/.angular/
 frontend/dist/
 frontend/node_modules/
 logs/
-monitoring/
 node_modules/
 rsn/
-screenshots/
 scripts/
-terraform/
 test/
-vagrant/

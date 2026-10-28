@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Single-instance Juice Shop release with automatic rollback on unhealthy deployment.
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@3
+Parameters:
+  ImageUri:
+    Type: String
+    AllowedPattern: '.+\.dkr\.ecr\..+\.amazonaws\.com/.+@sha256:[a-f0-9]{64}'
+  ClusterName:
+    Type: String
+  Subnets:
+    Type: List<AWS::EC2::Subnet::Id>
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+  TargetGroupArn:
+    Type: String
+  ExecutionRoleArn:
+    Type: String
+  LogGroupName:
+    Type: String
+Resources:
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Root Dockerfile includes frontend and SQLite; ephemeral state resets at startup by application design.
+        must:
+          - Use ARM64 images matching runtimePlatform.
+          - Do not assign an AWS task role; the application does not require AWS API access.
+    Properties:
+      Family: !Ref AWS::StackName
+      Cpu: '512'
+      Memory: '1024'
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !Ref ExecutionRoleArn
+      RuntimePlatform: {CpuArchitecture: ARM64, OperatingSystemFamily: LINUX}
+      ContainerDefinitions:
+        - Name: juice-shop
+          Image: !Ref ImageUri
+          Essential: true
+          Privileged: false
+          User: '65532'
+          PortMappings: [{ContainerPort: 3000, Protocol: tcp}]
+          Environment:
+            - {Name: PORT, Value: '3000'}
+            - {Name: NODE_ENV, Value: storefront}
+          StopTimeout: 60
+          HealthCheck:
+            Command:
+              - CMD
+              - /nodejs/bin/node
+              - -e
+              - "fetch('http://127.0.0.1:3000/rest/products/search').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 120
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroupName
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: app
+  Service:
+    Type: AWS::ECS::Service
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: One task preserves consistent SQLite state; stop/start releases avoid routing across independent databases.
+        must: [Keep DesiredCount at one and autoscaling disabled; deployments reset demo state.]
+    Properties:
+      ServiceName: !Ref AWS::StackName
+      Cluster: !Ref ClusterName
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      PlatformVersion: '1.4.0'
+      EnableExecuteCommand: false
+      HealthCheckGracePeriodSeconds: 180
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+        DeploymentCircuitBreaker: {Enable: true, Rollback: true}
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: !Ref Subnets
+          SecurityGroups: [!Ref TaskSecurityGroup]
+      LoadBalancers:
+        - ContainerName: juice-shop
+          ContainerPort: 3000
+          TargetGroupArn: !Ref TargetGroupArn
+Outputs:
+  ServiceName:
+    Description: ECS service for deployment verification.
+    Value: !GetAtt Service.Name
+  TaskDefinitionArn:
+    Description: Immutable task revision for this release.
+    Value: !Ref TaskDefinition
+  ImageUri:
+    Description: Exact deployed image digest for rollback.
+    Value: !Ref ImageUri

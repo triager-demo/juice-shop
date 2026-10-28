@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Short-lived GitHub Actions access to publish images and deploy the Juice Shop service stack.
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@3
+Parameters:
+  RepositoryArn:
+    Type: String
+  ExecutionRoleArn:
+    Type: String
+  PlatformStack:
+    Type: String
+    Default: juice-shop-demo-platform
+  ServiceStack:
+    Type: String
+    Default: juice-shop-demo-service
+  GitHubSubject:
+    Type: String
+    Description: Exact GitHub OIDC subject, including immutable IDs when enabled.
+    Default: repo:triager-demo@349090122/juice-shop@1436467059:environment:demo
+  ExistingProviderArn:
+    Type: String
+    Default: ''
+Conditions:
+  CreateProvider: !Equals [!Ref ExistingProviderArn, '']
+Resources:
+  GitHubProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+  DeployRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: GitHub environment grants short-lived deployment credentials, scoped to this service and repository.
+        must:
+          - Protect the demo environment with a main-only deployment branch rule.
+          - Trust only the exact repository identity and environment subject.
+          - Pass only the Fargate image-pull role, never arbitrary AWS roles.
+    Properties:
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If [CreateProvider, !Ref GitHubProvider, !Ref ExistingProviderArn]
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Ref GitHubSubject
+      Policies:
+        - PolicyName: PublishAndDeploy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:DescribeImages
+                Resource: !Ref RepositoryArn
+              - Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${PlatformStack}/*
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResource
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ServiceStack}/*
+              - Effect: Allow
+                Action: [ecs:RegisterTaskDefinition, ecs:DescribeTaskDefinition]
+                Resource: '*'
+              - Effect: Allow
+                Action: [ecs:DeregisterTaskDefinition, ecs:TagResource, ecs:UntagResource, ecs:ListTagsForResource]
+                Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${ServiceStack}:*
+              - Effect: Allow
+                Action: [ecs:CreateService, ecs:UpdateService, ecs:DeleteService, ecs:DescribeServices, ecs:TagResource, ecs:UntagResource, ecs:ListTagsForResource]
+                Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/${PlatformStack}/${ServiceStack}
+              - Effect: Allow
+                Action: ecs:DescribeClusters
+                Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${PlatformStack}
+              - Effect: Allow
+                Action: [ec2:DescribeSubnets, ec2:DescribeSecurityGroups, elasticloadbalancing:DescribeTargetGroups, elasticloadbalancing:DescribeTargetHealth]
+                Resource: '*'
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !Ref ExecutionRoleArn
+                Condition:
+                  StringEquals: {iam:PassedToService: ecs-tasks.amazonaws.com}
+Outputs:
+  DeployRoleArn:
+    Description: Set as AWS_DEPLOY_ROLE_ARN in the GitHub demo environment.
+    Value: !GetAtt DeployRole.Arn
