@@ -24,8 +24,10 @@ Tasks use public IPs for outbound image pulls without a NAT gateway; their secur
 group accepts port 3000 only from the load balancer. The application has no AWS
 task role. HTTPS and its HTTP redirect accept only the public IPv4 address supplied
 as `AllowedClientCidr` (a single address with `/32`). The load balancer uses IPv4.
-Anyone sharing that public IP can connect; update the parameter when changing networks
-or when the ISP changes the address.
+The HTTPS host rule additionally requires an invited Cognito account and authenticator-app
+MFA before forwarding any path, including API requests. Update the IP parameter when
+changing networks or when the ISP changes the address. The ALB can make outbound HTTPS
+requests to Cognito; application ingress remains ALB-only.
 
 Juice Shop uses local SQLite and resets its database at startup. Keep one task and
 no autoscaling. Releases stop the old task before starting its replacement, causing
@@ -62,6 +64,49 @@ can only publish images and change `juice-shop-demo-service`; it cannot edit its
 own trust policy or the platform network. `service.yml` remains the source of truth
 for every release, avoiding direct ECS updates that drift from CloudFormation.
 
+## Operator authentication
+
+The platform provisions an Essentials Cognito user pool with self-registration disabled,
+required TOTP MFA, and a Cognito-provided classic hosted login domain. The ALB uses a
+secret-bearing authorization-code client scoped to `openid`; no secret is exported or
+passed to Juice Shop. Cognito login is separate from Juice Shop challenge accounts.
+The callback is exactly `https://juice-shop.stuartmehrens.com/oauth2/idpresponse`
+(or the configured `DomainName`). No additional DNS record is required.
+
+For an existing deployment, update only `juice-shop-demo-platform` from a reviewed
+CloudFormation change set using profile `juice-shop-demo` in `us-east-2`. Reuse all
+existing parameter values, use the default `AuthDomainPrefix=juice-shop-demo`, and allow IAM capabilities.
+For another environment in the same account and Region, choose a distinct lowercase prefix. The administrator needs Cognito
+resource-management permissions and `cognito-idp:DescribeUserPoolClient` for ALB
+configuration. Expect three new Cognito resources, an updated HTTPS host rule, ALB
+outbound TCP 443, and new authentication outputs. No ECS service or task replacement
+is needed. All visitors will need an invitation once the update completes.
+
+Read `AuthUserPoolId` from the platform stack outputs. In the Cognito console, select
+that pool and create each approved user with their email address, send an email invitation,
+and let Cognito generate the temporary password. Do not put passwords in CLI arguments
+or source control. Invitations expire after three days; resend an invitation if needed.
+On first login, users choose a permanent password and enroll an authenticator app.
+After login, Cognito redirects back to the application through the ALB callback.
+
+To remove access, disable the user in Cognito and perform an administrator global sign-out.
+Existing ALB sessions are separate and can remain usable until their one-hour expiry;
+do not treat account disablement as immediate cookie revocation. For urgent shutdown,
+block ingress through the administrator-managed security group while investigating.
+Juice Shop logout only ends its own application session, not the outer Cognito/ALB session.
+Use a private browser session and close it after use on shared devices. Expiring the ALB
+session can still allow login through a valid Cognito browser session without another MFA
+prompt; the one-hour ALB timeout does not force hourly MFA.
+
+The user pool is retained on stack deletion or replacement to preserve operator accounts.
+Review retained pools separately during decommissioning. Do not roll back to a template
+without authentication merely to troubleshoot login: that would restore IP-only access.
+
+Cognito Essentials includes a shared allowance of 10,000 direct monthly active users;
+a small invited audience should stay within it. Authenticator MFA avoids SMS charges.
+See [Cognito pricing](https://aws.amazon.com/cognito/pricing/) for current allowances
+and email costs.
+
 ## Release and rollback
 
 Push or merge a change to `main` to run checks, build, deploy, and verify ECS stability
@@ -82,8 +127,14 @@ AWS_PROFILE=juice-shop-demo AWS_REGION=us-east-2 \
 
 ## Verification and operation
 
-- From the allowed network, the homepage, JavaScript bundle, challenges API, and
-  product API must work. Connections from other public IPs must be blocked.
+- From the allowed network in a fresh private browser, both the homepage and a direct
+  `/rest/products/search` request must redirect to Cognito before returning application data.
+  Confirm there is no public signup, an invited user must enroll MFA, and the homepage,
+  JavaScript bundle, challenges API, and product API work after login. Use another fresh
+  session to check an incorrect password is rejected. Connections from other public IPs
+  must remain blocked. An unrelated Host header must still receive the default 404.
+- Target-group health checks must remain healthy: they reach tasks directly from the ALB
+  and do not use the browser authentication rule.
 - CloudFormation must report a completed deployment and ECS must have one healthy
   running task using the requested image digest.
 - Application logs are retained for seven days in the platform's CloudWatch log

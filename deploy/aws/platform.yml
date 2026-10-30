@@ -1,18 +1,24 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Juice Shop demo network, image registry and HTTPS ingress for a single Fargate service.
+Description: Juice Shop demo network, image registry and authenticated HTTPS ingress for a single Fargate service.
 Metadata:
   AWSToolsMetrics:
     AWSAgentToolkit: aws-cloudformation@3
   com.aws.cloudformation.Context:
     must:
       - Deploy only the root Dockerfile, never the challenge infrastructure directory.
-      - Ingress is restricted to the operator IP; tasks accept traffic only from the load balancer.
+      - Ingress requires the operator IP and Cognito MFA; tasks accept traffic only from the load balancer.
 Parameters:
   AllowedClientCidr:
     Type: String
     Description: Public IPv4 address allowed to access the application, with /32 suffix.
     AllowedPattern: '^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/32$'
     ConstraintDescription: Supply a single IPv4 address followed by /32.
+  AuthDomainPrefix:
+    Type: String
+    Default: juice-shop-demo
+    Description: Lowercase prefix for the Cognito login domain; account and Region are appended.
+    AllowedPattern: '^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$'
+    MaxLength: 24
   CertificateArn:
     Type: String
     AllowedPattern: 'arn:aws:acm:us-east-2:[0-9]{12}:certificate/.+'
@@ -20,6 +26,63 @@ Parameters:
     Type: String
     Default: juice-shop.stuartmehrens.com
 Resources:
+  AuthUserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Separate operator identity gate preserves the deliberately vulnerable application login.
+        must: [Keep self-registration disabled and authenticator MFA required.]
+    Properties:
+      UserPoolTier: ESSENTIALS
+      UsernameAttributes: [email]
+      UsernameConfiguration: {CaseSensitive: false}
+      AutoVerifiedAttributes: [email]
+      AdminCreateUserConfig: {AllowAdminCreateUserOnly: true}
+      MfaConfiguration: 'ON'
+      EnabledMfas: [SOFTWARE_TOKEN_MFA]
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - {Name: verified_email, Priority: 1}
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 14
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: 3
+  AuthUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: ALB performs the confidential OAuth code exchange; no client secret enters the application.
+        must: [Keep the generated secret and code grant; restrict callbacks to the application domain.]
+    Properties:
+      UserPoolId: !Ref AuthUserPool
+      GenerateSecret: true
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid]
+      SupportedIdentityProviders: [COGNITO]
+      CallbackURLs: [!Sub 'https://${DomainName}/oauth2/idpresponse']
+      EnableTokenRevocation: true
+      PreventUserExistenceErrors: ENABLED
+      AccessTokenValidity: 15
+      IdTokenValidity: 15
+      RefreshTokenValidity: 1
+      TokenValidityUnits: {AccessToken: minutes, IdToken: minutes, RefreshToken: days}
+  AuthUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Cognito-provided domain avoids custom DNS and certificates; account and Region scope the configurable prefix.
+        must: [Keep hosted login available before attaching the ALB authentication action.]
+    Properties:
+      UserPoolId: !Ref AuthUserPool
+      Domain: !Sub '${AuthDomainPrefix}-${AWS::AccountId}-${AWS::Region}'
+      ManagedLoginVersion: 1
   Vpc:
     Type: AWS::EC2::VPC
     Properties:
@@ -70,7 +133,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Metadata:
       com.aws.cloudformation.Context:
-        why: Only the operator network can access HTTPS or its HTTP redirect.
+        why: Only the operator network can access the ALB; outbound HTTPS supports Cognito token and user-info requests.
         must: [Allow only AllowedClientCidr, never allow direct public ingress to the application task.]
     Properties:
       GroupDescription: Operator-only HTTP redirect and HTTPS
@@ -80,6 +143,7 @@ Resources:
         - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: !Ref AllowedClientCidr}
       SecurityGroupEgress:
         - {IpProtocol: tcp, FromPort: 3000, ToPort: 3000, CidrIp: 10.42.0.0/16}
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0}
   TaskSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Metadata:
@@ -133,13 +197,30 @@ Resources:
           FixedResponseConfig: {StatusCode: '404', ContentType: text/plain, MessageBody: Not found}
   HostRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Authenticate every application path before forwarding, including direct API requests.
+        must: [Never bypass authentication; retain the default listener denial and ALB-only task ingress.]
     Properties:
       ListenerArn: !Ref HttpsListener
       Priority: 1
       Conditions:
         - Field: host-header
           HostHeaderConfig: {Values: [!Ref DomainName]}
-      Actions: [{Type: forward, TargetGroupArn: !Ref TargetGroup}]
+      Actions:
+        - Type: authenticate-cognito
+          Order: 1
+          AuthenticateCognitoConfig:
+            UserPoolArn: !GetAtt AuthUserPool.Arn
+            UserPoolClientId: !Ref AuthUserPoolClient
+            UserPoolDomain: !Ref AuthUserPoolDomain
+            OnUnauthenticatedRequest: authenticate
+            Scope: openid
+            SessionTimeout: 3600
+            SessionCookieName: JuiceShopAuth
+        - Type: forward
+          Order: 2
+          TargetGroupArn: !Ref TargetGroup
   HttpListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Metadata:
@@ -209,6 +290,15 @@ Resources:
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt LogGroup.Arn
 Outputs:
+  AuthUserPoolId:
+    Description: Invite and disable approved operators in this Cognito user pool.
+    Value: !Ref AuthUserPool
+  AuthUserPoolClientId:
+    Description: ALB OAuth client identifier; the client secret is not exported.
+    Value: !Ref AuthUserPoolClient
+  AuthLoginUrl:
+    Description: Cognito-provided login domain.
+    Value: !Sub 'https://${AuthUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
   RepositoryUri:
     Description: Push images to this private registry.
     Value: !GetAtt Repository.RepositoryUri
