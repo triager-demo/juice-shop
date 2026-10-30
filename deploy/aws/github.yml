@@ -34,7 +34,7 @@ Resources:
     Type: AWS::IAM::Role
     Metadata:
       com.aws.cloudformation.Context:
-        why: GitHub environment grants short-lived deployment credentials, scoped to this service and repository.
+        why: GitHub environment grants short-lived deployment credentials; the CLI reads the service template summary before preparing updates.
         must:
           - Protect the demo environment with a main-only deployment branch rule.
           - Trust only the exact repository identity and environment subject.
@@ -85,6 +85,7 @@ Resources:
                   - cloudformation:DescribeStackResource
                   - cloudformation:DescribeStackResources
                   - cloudformation:GetTemplate
+                  - cloudformation:GetTemplateSummary
                 Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ServiceStack}/*
               - Effect: Allow
                 Action: [ecs:RegisterTaskDefinition, ecs:DescribeTaskDefinition]
