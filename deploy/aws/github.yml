@@ -34,7 +34,7 @@ Resources:
     Type: AWS::IAM::Role
     Metadata:
       com.aws.cloudformation.Context:
-        why: GitHub environment grants short-lived deployment credentials; the CLI reads the service template summary before preparing updates.
+        why: CLI reads the service template summary; ECS registration, description and deregistration require wildcard resources for revision lifecycle operations.
         must:
           - Protect the demo environment with a main-only deployment branch rule.
           - Trust only the exact repository identity and environment subject.
@@ -88,10 +88,10 @@ Resources:
                   - cloudformation:GetTemplateSummary
                 Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ServiceStack}/*
               - Effect: Allow
-                Action: [ecs:RegisterTaskDefinition, ecs:DescribeTaskDefinition]
+                Action: [ecs:RegisterTaskDefinition, ecs:DescribeTaskDefinition, ecs:DeregisterTaskDefinition]
                 Resource: '*'
               - Effect: Allow
-                Action: [ecs:DeregisterTaskDefinition, ecs:TagResource, ecs:UntagResource, ecs:ListTagsForResource]
+                Action: [ecs:TagResource, ecs:UntagResource, ecs:ListTagsForResource]
                 Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${ServiceStack}:*
               - Effect: Allow
                 Action: [ecs:CreateService, ecs:UpdateService, ecs:DeleteService, ecs:DescribeServices, ecs:TagResource, ecs:UntagResource, ecs:ListTagsForResource]
