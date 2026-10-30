@@ -19,12 +19,19 @@ Parameters:
     Description: Lowercase prefix for the Cognito login domain; account and Region are appended.
     AllowedPattern: '^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$'
     MaxLength: 24
+  CustomAuthDomainName:
+    Type: String
+    Default: ''
+    Description: Verified custom Cognito domain; leave empty until its certificate and DNS are ready.
+    AllowedPattern: '^$|^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$'
   CertificateArn:
     Type: String
     AllowedPattern: 'arn:aws:acm:us-east-2:[0-9]{12}:certificate/.+'
   DomainName:
     Type: String
     Default: juice-shop.stuartmehrens.com
+Conditions:
+  UseCustomAuthDomain: !Not [!Equals [!Ref CustomAuthDomainName, '']]
 Resources:
   AuthUserPool:
     Type: AWS::Cognito::UserPool
@@ -199,7 +206,7 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
     Metadata:
       com.aws.cloudformation.Context:
-        why: Authenticate every application path before forwarding, including direct API requests.
+        why: Authenticate every application path; switch to the separately provisioned custom domain only after certificate and DNS verification.
         must: [Never bypass authentication; retain the default listener denial and ALB-only task ingress.]
     Properties:
       ListenerArn: !Ref HttpsListener
@@ -213,7 +220,7 @@ Resources:
           AuthenticateCognitoConfig:
             UserPoolArn: !GetAtt AuthUserPool.Arn
             UserPoolClientId: !Ref AuthUserPoolClient
-            UserPoolDomain: !Ref AuthUserPoolDomain
+            UserPoolDomain: !If [UseCustomAuthDomain, !Ref CustomAuthDomainName, !Ref AuthUserPoolDomain]
             OnUnauthenticatedRequest: authenticate
             Scope: openid
             SessionTimeout: 3600
@@ -297,8 +304,8 @@ Outputs:
     Description: ALB OAuth client identifier; the client secret is not exported.
     Value: !Ref AuthUserPoolClient
   AuthLoginUrl:
-    Description: Cognito-provided login domain.
-    Value: !Sub 'https://${AuthUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
+    Description: Active Cognito login domain; start sign-in at the application URL.
+    Value: !If [UseCustomAuthDomain, !Sub 'https://${CustomAuthDomainName}', !Sub 'https://${AuthUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com']
   RepositoryUri:
     Description: Push images to this private registry.
     Value: !GetAtt Repository.RepositoryUri
