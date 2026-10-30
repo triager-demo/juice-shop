@@ -43,7 +43,7 @@ activated. Activation and billing changes are owner-managed prerequisites.
 
 1. Request an ACM DNS-validated certificate for the application domain in `us-east-2`.
    Add its validation CNAME in Squarespace and wait for `ISSUED`.
-2. Validate all three templates with `cfn-lint` and CloudFormation Guard, then
+2. Validate all deployment templates with `cfn-lint` and CloudFormation Guard, then
    review a CloudFormation change set for `platform.yml`.
 3. Deploy `platform.yml` as `juice-shop-demo-platform`, supplying `CertificateArn`
    and `AllowedClientCidr`
@@ -71,7 +71,8 @@ required TOTP MFA, and a Cognito-provided classic hosted login domain. The ALB u
 secret-bearing authorization-code client scoped to `openid`; no secret is exported or
 passed to Juice Shop. Cognito login is separate from Juice Shop challenge accounts.
 The callback is exactly `https://juice-shop.stuartmehrens.com/oauth2/idpresponse`
-(or the configured `DomainName`). No additional DNS record is required.
+(or the configured `DomainName`). The default Cognito prefix needs no additional DNS record;
+the optional branded domain below requires its own certificate and DNS records.
 
 For an existing deployment, update only `juice-shop-demo-platform` from a reviewed
 CloudFormation change set using profile `juice-shop-demo` in `us-east-2`. Reuse all
@@ -106,6 +107,48 @@ Cognito Essentials includes a shared allowance of 10,000 direct monthly active u
 a small invited audience should stay within it. Authenticator MFA avoids SMS charges.
 See [Cognito pricing](https://aws.amazon.com/cognito/pricing/) for current allowances
 and email costs.
+
+## Branded sign-in domain
+
+Use `auth.juice-shop.stuartmehrens.com` for Cognito login while the storefront remains
+at `juice-shop.stuartmehrens.com`. Users should start at the storefront URL so the ALB
+can initiate the OAuth flow. The Cognito login URL still contains normal OAuth query
+parameters; changing the hostname does not remove them. Existing users and MFA
+registrations stay in the same pool. A first visit to the new domain can require login.
+
+Roll out in two stages using the administrator profile:
+
+1. Request a DNS-validated public ACM certificate for `auth.juice-shop.stuartmehrens.com`
+   in **us-east-1**, even though the pool and stacks run in us-east-2. Add ACM's
+   validation CNAME in Squarespace and wait for `ISSUED`. Retain that record for renewal.
+   Cognito requires the parent `juice-shop.stuartmehrens.com` to resolve to an IPv4
+   address; its existing application CNAME already resolves through the ALB.
+2. Deploy `auth-domain.yml` as `juice-shop-demo-auth-domain` in **us-east-2**, supplying
+   the existing platform `AuthUserPoolId` as `UserPoolId`, the application `DomainName`,
+   and the issued us-east-1 `CertificateArn`. Review the change set first. The stack
+   adds a custom domain to the existing pool alongside the prefix domain; it neither
+   replaces the pool nor changes the ALB authentication action.
+3. Add a second Squarespace CNAME with host `auth.juice-shop` pointing to the custom
+   stack's `AuthDomainDnsTarget`. Leave the existing `juice-shop` CNAME untouched.
+   Wait for the custom domain to become active and for DNS and its HTTPS certificate
+   to work. Provisioning the Cognito-managed CloudFront distribution can take time.
+4. Update `juice-shop-demo-platform` from `platform.yml`, preserving existing parameters
+   and setting `CustomAuthDomainName` to the custom stack's `AuthDomainName` output.
+   The nonempty parameter selects the verified custom domain in the ALB action and
+   `AuthLoginUrl` output. It must refer to a domain on this platform's existing pool.
+   This is a runtime dependency on the separate domain stack, not a CloudFormation
+   export/import relationship; the operator must verify it before cutover.
+5. In a new private browser session, open the storefront and a direct product API URL.
+   Both should redirect to `auth.juice-shop.stuartmehrens.com`; complete login and MFA
+   and confirm return to the app. No callback URL or app client secret change is needed.
+
+To undo only the hostname cutover, set `CustomAuthDomainName` back to an empty string
+using the current platform template. This restores the original prefix domain and
+keeps the MFA gate. Do that before removing the custom domain stack or its DNS record.
+Do not change or delete the prefix domain during migration. Never replace the user
+pool to change a login hostname.
+
+See [Cognito custom-domain requirements](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-add-custom-domain.html).
 
 ## Release and rollback
 

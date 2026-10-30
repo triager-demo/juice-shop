@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Branded Cognito sign-in domain for an existing Juice Shop user pool; provision before switching ALB authentication.
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@3
+  com.aws.cloudformation.Context:
+    must:
+      - Deploy in the same Region as the user pool, using an issued ACM certificate from us-east-1.
+      - Verify DNS and HTTPS before setting CustomAuthDomainName on the platform stack.
+Parameters:
+  UserPoolId:
+    Type: String
+    Description: AuthUserPoolId output from the existing platform stack; never create a second pool for a domain change.
+    AllowedPattern: 'us-east-2_[a-zA-Z0-9]+'
+  DomainName:
+    Type: String
+    Default: juice-shop.stuartmehrens.com
+    Description: Application hostname; the login hostname is auth followed by this hostname.
+    AllowedPattern: '^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$'
+  CertificateArn:
+    Type: String
+    Description: Issued ACM certificate for the login hostname in us-east-1 (Cognito CloudFront requirement).
+    AllowedPattern: 'arn:aws:acm:us-east-1:[0-9]{12}:certificate/.+'
+Resources:
+  CustomAuthDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Provision alongside the existing prefix domain so DNS can be verified before ALB cutover; preserve existing users and MFA.
+        must:
+          - Certificate must cover the auth subdomain and reside in us-east-1.
+          - Switch the ALB back to its prefix domain before deleting this stack.
+    Properties:
+      UserPoolId: !Ref UserPoolId
+      Domain: !Sub 'auth.${DomainName}'
+      CustomDomainConfig:
+        CertificateArn: !Ref CertificateArn
+      ManagedLoginVersion: 1
+Outputs:
+  AuthDomainName:
+    Description: Set CustomAuthDomainName on the platform stack only after DNS and HTTPS verification.
+    Value: !Ref CustomAuthDomain
+  AuthDomainDnsTarget:
+    Description: Squarespace CNAME target for the auth subdomain; do not change the application CNAME.
+    Value: !GetAtt CustomAuthDomain.CloudFrontDistribution
